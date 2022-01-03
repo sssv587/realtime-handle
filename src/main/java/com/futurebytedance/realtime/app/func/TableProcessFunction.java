@@ -169,9 +169,42 @@ public class TableProcessFunction extends ProcessFunction<JSONObject, JSONObject
         }
     }
 
-    // 每过来一个元素，方法执行一次
+    /**
+     * 每过来一个元素，方法执行一次，主要任务是根据内存中配置表Map对当前进来的元素进行分流梳理
+     */
     @Override
-    public void processElement(JSONObject value, ProcessFunction<JSONObject, JSONObject>.Context ctx, Collector<JSONObject> out) throws Exception {
+    public void processElement(JSONObject jsonObj, ProcessFunction<JSONObject, JSONObject>.Context ctx, Collector<JSONObject> out) throws Exception {
+        // 获取表名
+        String table = jsonObj.getString("table");
+        // 获取操作类型
+        String type = jsonObj.getString("type");
+        // 注意：问题修复 如果使用Maxwell的Bootstrap同步历史数据  这个时候它的操作类型叫bootstrap-insert
+        if ("bootstrap-insert".equals(type)) {
+            type = "insert";
+            jsonObj.put("type", type);
+        }
+
+        if (tableProcessMap != null && tableProcessMap.size() > 0) {
+            // 根据表名和操作类型拼接key
+            String key = table + ":" + type;
+            // 从内存的配置Map中获取当前key对象的配置信息
+            TableProcess tableProcess = tableProcessMap.get(key);
+            // 如果获取到了该元素对应的配置信息
+            if (tableProcess != null) {
+                // 获取sinkTable，指明当前这条数据应该发往何处  如果是维度数据，那么对应的是phoenix中的表名；如果是事实数据，对应的是kafka的主题
+                jsonObj.put("sink_table", tableProcess.getSinkTable());
+                String sinkColumns = tableProcess.getSinkColumns();
+                // 如果指定了sinkColumn，需要对保留的字段进行过滤处理
+                if (sinkColumns != null && sinkColumns.length() > 0) {
+                    filerColumn(jsonObj.getJSONObject("data"), sinkColumns);
+                }
+            } else {
+                System.out.println("No this Key:" + key + " in MySQL");
+            }
+        }
+    }
+
+    private void filerColumn(JSONObject data, String sinkColumns) {
 
     }
 }
