@@ -6,6 +6,7 @@ import com.futurebytedance.realtime.app.func.TableProcessFunction;
 import com.futurebytedance.realtime.bean.TableProcess;
 import com.futurebytedance.realtime.utils.MyKafkaUtil;
 import org.apache.flink.api.common.functions.FilterFunction;
+import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.runtime.state.filesystem.FsStateBackend;
 import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -34,6 +35,10 @@ public class BaseDataBaseApp {
         env.getCheckpointConfig().setCheckpointTimeout(60000);
         env.setStateBackend(new FsStateBackend("hdfs://hadoop01:8020/mall/checkpoint/baseApp"));
         System.setProperty("HADOOP_USER_NAME", "root");
+        // 重启策略
+        // 如果没有开启重启checkpoint，那么重启策略就是noRestart
+        // 如果开启了checkpoint，那么重启策略会自动帮你进行重启 重启次数Integer.MaxValue
+        // env.setRestartStrategy(RestartStrategies.noRestart());
 
         //TODO 2.从kafka的ODS层读取数据
         String topic = "ods_base_db_m";
