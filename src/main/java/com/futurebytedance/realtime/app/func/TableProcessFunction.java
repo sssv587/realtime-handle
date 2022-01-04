@@ -201,10 +201,34 @@ public class TableProcessFunction extends ProcessFunction<JSONObject, JSONObject
             } else {
                 System.out.println("No this Key:" + key + " in MySQL");
             }
+
+            // 根据sinkType，将数据输出到不同的流
+            if (tableProcess != null && tableProcess.getSinkType().equals(TableProcess.SINK_TYPE_HBASE)) {
+                // 如果sinkType = hbase，说明是维度数据，通过侧输出流输出
+            } else if (tableProcess != null && tableProcess.getSinkType().equals(TableProcess.SINK_TYPE_KAFKA)) {
+                // 如果sinkType = kafka ，说明是事实数据，通过主流输出
+                out.collect(jsonObj);
+            }
         }
     }
 
+    /**
+     * 对Data中数据进行过滤
+     */
     private void filerColumn(JSONObject data, String sinkColumns) {
+        // sinkColumns 表示要保留哪些列     id,out_trade_no,order_id...
+        String[] cols = sinkColumns.split(",");
+        // 为了判断是否包含某个元素，将数组转换为集合
+        List<String> columnsList = Arrays.asList(cols);
 
+        // 获取json对象中封装的一个个键值对   每个键值对封装为Entry类型
+        Set<Map.Entry<String, Object>> entrySet = data.entrySet();
+        Iterator<Map.Entry<String, Object>> iterator = entrySet.iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<String, Object> entry = iterator.next();
+            if (columnsList.contains(entry.getKey())) {
+                iterator.remove();
+            }
+        }
     }
 }
