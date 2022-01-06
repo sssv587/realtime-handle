@@ -2,6 +2,7 @@ package com.futurebytedance.realtime.app.dwd;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.futurebytedance.realtime.app.func.DimSink;
 import com.futurebytedance.realtime.app.func.TableProcessFunction;
 import com.futurebytedance.realtime.bean.TableProcess;
 import com.futurebytedance.realtime.utils.MyKafkaUtil;
@@ -13,6 +14,7 @@ import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.sink.SinkFunction;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
 import org.apache.flink.util.OutputTag;
 
@@ -65,6 +67,9 @@ public class BaseDataBaseApp {
         );
         // 5.3 获取侧输出流 写到Hbase的数据
         DataStream<JSONObject> hbaseDataStream = kafkaDataStream.getSideOutput(hbaseTag);
+
+        //TODO 6.将维度数据保存到phoenix对应的维度表中
+        hbaseDataStream.addSink(new DimSink());
 
         env.execute();
     }
