@@ -7,16 +7,21 @@ import com.futurebytedance.realtime.app.func.TableProcessFunction;
 import com.futurebytedance.realtime.bean.TableProcess;
 import com.futurebytedance.realtime.utils.MyKafkaUtil;
 import org.apache.flink.api.common.functions.FilterFunction;
-import org.apache.flink.api.common.restartstrategy.RestartStrategies;
+import org.apache.flink.api.common.serialization.SerializationSchema;
 import org.apache.flink.runtime.state.filesystem.FsStateBackend;
 import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.api.functions.sink.SinkFunction;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer;
+import org.apache.flink.streaming.connectors.kafka.KafkaSerializationSchema;
 import org.apache.flink.util.OutputTag;
+import org.apache.kafka.clients.producer.ProducerRecord;
+
+import javax.annotation.Nullable;
+import java.nio.charset.StandardCharsets;
 
 
 /**
@@ -70,6 +75,23 @@ public class BaseDataBaseApp {
 
         //TODO 6.将维度数据保存到phoenix对应的维度表中
         hbaseDataStream.addSink(new DimSink());
+
+        //TODO 7.将事实数据写回到kafka的dwd层
+        FlinkKafkaProducer<JSONObject> kafkaSink = MyKafkaUtil.getKafkaSinkBySchema(new KafkaSerializationSchema<JSONObject>() {
+            @Override
+            public void open(SerializationSchema.InitializationContext context) throws Exception {
+                System.out.println("kafka序列化");
+            }
+
+            @Override
+            public ProducerRecord<byte[], byte[]> serialize(JSONObject element, @Nullable Long timestamp) {
+                String sinkTopic = element.getString("sink_table");
+                JSONObject dataJsonObj = element.getJSONObject("data");
+                return new ProducerRecord<>(sinkTopic, dataJsonObj.toString().getBytes());
+            }
+        });
+
+        kafkaDataStream.addSink(kafkaSink);
 
         env.execute();
     }
