@@ -144,7 +144,10 @@ public class BaseLogApp {
                     // 如果是启动日志，输出到启动侧输出流
                     ctx.output(startTag, dataStr);
                 } else {
-                    // 如果不是启动日志，获取曝光日志标记
+                    // 如果不是启动日志，说明是页面日志，输出到主流
+                    out.collect(dataStr);
+
+                    // 如果不是启动日志，获取曝光日志标记(曝光日志中也携带了页面日志)
                     JSONArray displays = jsonObject.getJSONArray("displays");
                     // 判断是否为曝光日志
                     if (displays != null && displays.size() != 0) {
@@ -158,9 +161,6 @@ public class BaseLogApp {
                             displayJsonObj.put("page_id", pageId);
                             ctx.output(displayTag, displayJsonObj.toString());
                         }
-                    } else {
-                        // 如果不是曝光日志，说明是页面日志，输出到主流
-                        out.collect(dataStr);
                     }
                 }
             }
