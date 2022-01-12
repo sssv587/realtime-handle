@@ -5,16 +5,24 @@ import com.alibaba.fastjson.JSONObject;
 import com.futurebytedance.realtime.utils.MyKafkaUtil;
 import org.apache.flink.api.common.eventtime.SerializableTimestampAssigner;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
+import org.apache.flink.cep.*;
 import org.apache.flink.cep.pattern.Pattern;
 import org.apache.flink.cep.pattern.conditions.SimpleCondition;
 import org.apache.flink.runtime.state.filesystem.FsStateBackend;
 import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.TimeCharacteristic;
+import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
+import org.apache.flink.streaming.api.datastream.KeyedStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
+import org.apache.flink.util.Collector;
+import org.apache.flink.util.OutputTag;
+
+import java.util.List;
+import java.util.Map;
 
 /**
  * @author yuhang.sun
@@ -57,7 +65,7 @@ public class UserJumpDetailApp {
                 }));
 
         //TODO 5.按照mid进行分组
-        jsonObjWithTS.keyBy(jsonStr -> jsonStr.getJSONObject("common").getString("mid"));
+        KeyedStream<JSONObject, String> keyedStream = jsonObjWithTS.keyBy(jsonStr -> jsonStr.getJSONObject("common").getString("mid"));
 
         /*
          * 计算页面跳出明细，需要满足两个条件
@@ -92,6 +100,47 @@ public class UserJumpDetailApp {
                         })
                 .within(Time.milliseconds(10000));
 
+        //TODO 7.根据：CEP表达式筛选流
+        PatternStream<JSONObject> patternStream = CEP.pattern(keyedStream, pattern);
+
+        //TODO 8.从筛选之后的流中，提取数据  将超时数据 放到侧输出流中
+        OutputTag<String> timeoutTag = new OutputTag<String>("timeout") {
+        };
+
+//
+//        patternStream.select(new PatternSelectFunction<JSONObject, String>() {
+//            @Override
+//            public String select(Map<String, List<JSONObject>> map) throws Exception {
+//
+//            }
+//        })
+
+        SingleOutputStreamOperator<String> filterDataStream = patternStream.flatSelect(
+                timeoutTag,
+                //处理超时数据
+                new PatternFlatTimeoutFunction<JSONObject, String>() {
+                    @Override
+                    public void timeout(Map<String, List<JSONObject>> map, long l, Collector<String> collector) throws Exception {
+                        List<JSONObject> jsonObjectList = map.get("first");
+                        //注意：在timeout方法中的数据都会被参数1中的标签标记
+                        for (JSONObject jsonObject : jsonObjectList) {
+                            collector.collect(jsonObject.toString());
+                        }
+                    }
+                },
+                //处理的没有超时数据
+                new PatternFlatSelectFunction<JSONObject, String>() {
+                    @Override
+                    public void flatSelect(Map<String, List<JSONObject>> map, Collector<String> collector) throws Exception {
+                        //没有超时数据，不在我们的统计范围之内，所以这里不需要写什么代码
+                    }
+                });
+
+        //TODO 9.从侧输出流中获取超时数据
+        DataStream<String> jumpDataStream = filterDataStream.getSideOutput(timeoutTag);
+
+        //TODO 10.将跳出数据写回到kafka的DWM层
+        jumpDataStream.addSink(MyKafkaUtil.getKafkaSink(sinkTopic));
 
         env.execute();
     }
