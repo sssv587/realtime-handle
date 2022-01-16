@@ -3,17 +3,25 @@ package com.futurebytedance.realtime.app.dwm;
 import com.alibaba.fastjson.JSON;
 import com.futurebytedance.realtime.bean.OrderDetail;
 import com.futurebytedance.realtime.bean.OrderInfo;
+import com.futurebytedance.realtime.bean.OrderWide;
 import com.futurebytedance.realtime.utils.MyKafkaUtil;
+import org.apache.flink.api.common.eventtime.SerializableTimestampAssigner;
+import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.RichMapFunction;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.state.filesystem.FsStateBackend;
 import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
+import org.apache.flink.streaming.api.datastream.KeyedStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.co.ProcessJoinFunction;
+import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
+import org.apache.flink.util.Collector;
 
 import java.text.SimpleDateFormat;
+import java.time.Duration;
 
 /**
  * @author yuhang.sun
@@ -21,15 +29,15 @@ import java.text.SimpleDateFormat;
  * @date 2022/1/13 - 23:54
  * @Description 合并订单宽表
  * 业务执行流程
- *      -模拟生成数据
- *      -数据插入到mysql中
- *      -在Binlog中记录数据的变化
- *      -Maxwell将数据以Json的形式发送到Kafka的ODS(ods_base_db_m)
- *      -BaseDataBaseApp读取ods_base_db_m中的数据进行分流
- *          >从Mysql的配置表读取数据
- *          >将配置缓存到map集合
- *          >检查Phoenix中的表是否存在
- *          >对数据进行分流发送到不同的dwd
+ * -模拟生成数据
+ * -数据插入到mysql中
+ * -在Binlog中记录数据的变化
+ * -Maxwell将数据以Json的形式发送到Kafka的ODS(ods_base_db_m)
+ * -BaseDataBaseApp读取ods_base_db_m中的数据进行分流
+ * >从Mysql的配置表读取数据
+ * >将配置缓存到map集合
+ * >检查Phoenix中的表是否存在
+ * >对数据进行分流发送到不同的dwd
  */
 public class OrderWideApp {
     public static void main(String[] args) throws Exception {
@@ -95,6 +103,45 @@ public class OrderWideApp {
             }
         });
 
+        //TODO 4.指定事件时间字段
+        //4.1 订单指定事件时间字段
+        SingleOutputStreamOperator<OrderInfo> orderInfoWithTs = orderInfoMapDataStream.assignTimestampsAndWatermarks(
+                WatermarkStrategy
+                        .<OrderInfo>forBoundedOutOfOrderness(Duration.ofSeconds(3))
+                        .withTimestampAssigner(new SerializableTimestampAssigner<OrderInfo>() {
+                            @Override
+                            public long extractTimestamp(OrderInfo element, long recordTimestamp) {
+                                return element.getCreate_ts();
+                            }
+                        })
+        );
+
+        //4.2 订单明细指定事件时间字段
+        SingleOutputStreamOperator<OrderDetail> orderDetailWithTs = orderDetailMapDataStream.assignTimestampsAndWatermarks(
+                WatermarkStrategy
+                        .<OrderDetail>forBoundedOutOfOrderness(Duration.ofSeconds(3))
+                        .withTimestampAssigner(new SerializableTimestampAssigner<OrderDetail>() {
+                            @Override
+                            public long extractTimestamp(OrderDetail element, long recordTimestamp) {
+                                return element.getCreate_ts();
+                            }
+                        })
+        );
+
+        //TODO 5.按照订单id进行分组 指定关联的key
+        KeyedStream<OrderInfo, Long> orderInfoKeyedDataStream = orderInfoWithTs.keyBy(OrderInfo::getId);
+        KeyedStream<OrderDetail, Long> orderDetailLongKeyedStream = orderDetailWithTs.keyBy(OrderDetail::getOrder_id);
+
+        //TODO 6.使用intervalJoin对订单和订单明细进行关联
+        SingleOutputStreamOperator<OrderWide> orderWideDataStream = orderInfoKeyedDataStream
+                .intervalJoin(orderDetailLongKeyedStream)
+                .between(Time.milliseconds(-5), Time.milliseconds(5))
+                .process(new ProcessJoinFunction<OrderInfo, OrderDetail, OrderWide>() {
+                    @Override
+                    public void processElement(OrderInfo left, OrderDetail right, ProcessJoinFunction<OrderInfo, OrderDetail, OrderWide>.Context ctx, Collector<OrderWide> out) throws Exception {
+                        out.collect(new OrderWide(left, right));
+                    }
+                });
 
 
         env.execute();
