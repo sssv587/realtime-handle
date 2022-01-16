@@ -2,6 +2,7 @@ package com.futurebytedance.realtime.app.func;
 
 import com.alibaba.fastjson.JSONObject;
 import com.futurebytedance.realtime.common.RealTimeConfig;
+import com.futurebytedance.realtime.utils.DimUtil;
 import org.apache.commons.lang.StringUtils;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
@@ -33,7 +34,7 @@ public class DimSink extends RichSinkFunction<JSONObject> {
     }
 
     @Override
-    public void invoke(JSONObject jsonObj, Context context) throws Exception {
+    public void invoke(JSONObject jsonObj, Context context) {
         // 获取目标表的名称
         String tableName = jsonObj.getString("sink_table");
         // 获取json中data数据  data数据就是经过过滤之后  保留的业务表中字段
@@ -52,7 +53,12 @@ public class DimSink extends RichSinkFunction<JSONObject> {
             } catch (SQLException e) {
                 throw new RuntimeException("向Phoenix插入数据失败");
             }
+            //如果当前做的是更新操作，需要将redis中缓存的数据给清除掉
+            if ("update".equals(jsonObj.getString("type"))) {
+                DimUtil.deleteCache(tableName, dataJsonObj.getString("id"));
+            }
         }
+
     }
 
     // 根据data属性和值 生成向Phoenix中插入数据的sql语句
