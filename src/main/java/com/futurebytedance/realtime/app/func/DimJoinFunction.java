@@ -23,5 +23,5 @@ public interface DimJoinFunction<T> {
      * @param obj         传入的对象
      * @param dimInfoJson 传入的JsonObject对象
      */
-    void join(T obj, JSONObject dimInfoJson);
+    void join(T obj, JSONObject dimInfoJson) throws Exception;
 }
