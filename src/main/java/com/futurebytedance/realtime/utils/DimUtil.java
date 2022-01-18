@@ -138,6 +138,11 @@ public class DimUtil {
         return dimJsonObj;
     }
 
+    //重载方法
+    public static JSONObject getDimInfo(String tableName, String id) {
+        return getDimInfoCache(tableName, Tuple2.of("id", id));
+    }
+
     //根据key让缓存失效
     public static void deleteCache(String tableName, String primaryKey) {
         String key = "dim:" + tableName.toLowerCase() + ":" + primaryKey;
