@@ -57,12 +57,16 @@ public abstract class DimAsyncFunction<T> extends RichAsyncFunction<T, T> implem
                 String key = getKey(input);
 
                 //根据维度的主键到维度表中进行查询
-                JSONObject dimInfoJsonObj = DimUtil.getDimInfoNoCache(tableName, key);
+                JSONObject dimInfoJsonObj = DimUtil.getDimInfo(tableName, key);
                 System.out.println("维度数据Json格式:" + dimInfoJsonObj);
 
                 if (dimInfoJsonObj != null) {
                     //维度关联 流中的事实数据和查询出来的维度数据进行关联
-                    join(input, dimInfoJsonObj);
+                    try {
+                        join(input, dimInfoJsonObj);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
                 }
                 System.out.println("维度关联后的对象:" + input);
 
