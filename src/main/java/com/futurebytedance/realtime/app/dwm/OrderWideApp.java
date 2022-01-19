@@ -11,8 +11,6 @@ import org.apache.flink.api.common.eventtime.SerializableTimestampAssigner;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.RichMapFunction;
 import org.apache.flink.configuration.Configuration;
-import org.apache.flink.runtime.state.filesystem.FsStateBackend;
-import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.datastream.AsyncDataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.datastream.KeyedStream;
@@ -78,7 +76,7 @@ public class OrderWideApp {
                     SimpleDateFormat simpleDateFormat = null;
 
                     @Override
-                    public void open(Configuration parameters) throws Exception {
+                    public void open(Configuration parameters) {
                         simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
                     }
 
@@ -96,7 +94,7 @@ public class OrderWideApp {
             SimpleDateFormat simpleDateFormat = null;
 
             @Override
-            public void open(Configuration parameters) throws Exception {
+            public void open(Configuration parameters) {
                 simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
             }
 
@@ -143,13 +141,13 @@ public class OrderWideApp {
                 .between(Time.milliseconds(-5), Time.milliseconds(5))
                 .process(new ProcessJoinFunction<OrderInfo, OrderDetail, OrderWide>() {
                     @Override
-                    public void processElement(OrderInfo left, OrderDetail right, ProcessJoinFunction<OrderInfo, OrderDetail, OrderWide>.Context ctx, Collector<OrderWide> out) throws Exception {
+                    public void processElement(OrderInfo left, OrderDetail right, ProcessJoinFunction<OrderInfo, OrderDetail, OrderWide>.Context ctx, Collector<OrderWide> out) {
                         out.collect(new OrderWide(left, right));
                     }
                 });
 
         //TODO 7.关联用户维度
-        SingleOutputStreamOperator<OrderWide> orderWideWithUserDS = AsyncDataStream.unorderedWait(
+        SingleOutputStreamOperator<OrderWide> orderWideWithUserDataStream = AsyncDataStream.unorderedWait(
                 orderWideDataStream,
                 new DimAsyncFunction<OrderWide>("DIM_USER_INFO") {
                     @Override
@@ -185,8 +183,8 @@ public class OrderWideApp {
                 }, 60, TimeUnit.SECONDS);
 
         //TODO 8.关联省市维度
-        SingleOutputStreamOperator<OrderWide> orderWideWithProvinceDS = AsyncDataStream.unorderedWait(
-                orderWideWithUserDS,
+        SingleOutputStreamOperator<OrderWide> orderWideWithProvinceDataStream = AsyncDataStream.unorderedWait(
+                orderWideWithUserDataStream,
                 new DimAsyncFunction<OrderWide>("DIM_BASE_PROVINCE") {
 
                     @Override
@@ -206,7 +204,77 @@ public class OrderWideApp {
                 TimeUnit.SECONDS
         );
 
-        orderDetailDataStream.print(">>>>>>");
+        //TODO 9.关联SKU维度
+        SingleOutputStreamOperator<OrderWide> orderWideSkuDataStream = AsyncDataStream.unorderedWait(
+                orderWideWithProvinceDataStream,
+                new DimAsyncFunction<OrderWide>("DIM_SKU_INFO") {
+                    @Override
+                    public String getKey(OrderWide obj) {
+                        return obj.getSku_id().toString();
+                    }
+
+                    @Override
+                    public void join(OrderWide orderWide, JSONObject dimInfoJson) {
+                        orderWide.setSku_name(dimInfoJson.getString("SKU_NAME"));
+                        orderWide.setSpu_id(dimInfoJson.getLong("SPU_ID"));
+                        orderWide.setCategory3_id(dimInfoJson.getLong("CATEGORY3_ID"));
+                        orderWide.setTm_id(dimInfoJson.getLong("TM_ID"));
+                    }
+                },
+                60,
+                TimeUnit.SECONDS
+        );
+
+        //TODO 10.关联SPU维度
+        SingleOutputStreamOperator<OrderWide> orderWideWithSpuDataStream = AsyncDataStream.unorderedWait(
+                orderWideSkuDataStream,
+                new DimAsyncFunction<OrderWide>("DIM_SPU_INFO") {
+
+                    @Override
+                    public String getKey(OrderWide orderWide) {
+                        return orderWide.getSpu_id().toString();
+                    }
+
+                    @Override
+                    public void join(OrderWide orderWide, JSONObject dimInfoJson) {
+                        orderWide.setSpu_name(dimInfoJson.getString("SPU_NAME"));
+                    }
+                },
+                60,
+                TimeUnit.SECONDS
+        );
+
+        //TODO 11.关联品类维度
+        SingleOutputStreamOperator<OrderWide> orderWideWithCategoryDataStream =
+                AsyncDataStream.unorderedWait(
+                        orderWideWithSpuDataStream, new DimAsyncFunction<OrderWide>("DIM_BASE_CATEGORY3") {
+                            @Override
+                            public void join(OrderWide orderWide, JSONObject jsonObject) {
+                                orderWide.setCategory3_name(jsonObject.getString("NAME"));
+                            }
+
+                            @Override
+                            public String getKey(OrderWide orderWide) {
+                                return String.valueOf(orderWide.getCategory3_id());
+                            }
+                        }, 60, TimeUnit.SECONDS);
+
+        //TODO 12.关联品牌维度
+        SingleOutputStreamOperator<OrderWide> orderWideWithTmDataStream = AsyncDataStream.unorderedWait(
+                orderWideWithCategoryDataStream, new DimAsyncFunction<OrderWide>("DIM_BASE_TRADEMARK") {
+                    @Override
+                    public void join(OrderWide orderWide, JSONObject jsonObject) throws Exception {
+                        orderWide.setTm_name(jsonObject.getString("TM_NAME"));
+                    }
+
+                    @Override
+                    public String getKey(OrderWide orderWide) {
+                        return String.valueOf(orderWide.getTm_id());
+                    }
+                }, 60, TimeUnit.SECONDS);
+
+        //TODO 13.将关联后的订单宽表数据写回到kafka的DWM层
+        orderWideWithTmDataStream.map(JSON::toJSONString).addSink(MyKafkaUtil.getKafkaSink(orderWideSinkTopic));
 
         env.execute();
     }
