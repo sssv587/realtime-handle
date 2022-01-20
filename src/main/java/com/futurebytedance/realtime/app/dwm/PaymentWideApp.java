@@ -3,6 +3,7 @@ package com.futurebytedance.realtime.app.dwm;
 import com.alibaba.fastjson.JSON;
 import com.futurebytedance.realtime.bean.OrderWide;
 import com.futurebytedance.realtime.bean.PaymentInfo;
+import com.futurebytedance.realtime.bean.PaymentWide;
 import com.futurebytedance.realtime.utils.DateTimeUtil;
 import com.futurebytedance.realtime.utils.MyKafkaUtil;
 import org.apache.flink.api.common.eventtime.SerializableTimestampAssigner;
@@ -10,12 +11,14 @@ import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.runtime.state.filesystem.FsStateBackend;
 import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
+import org.apache.flink.streaming.api.datastream.KeyedStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.co.ProcessJoinFunction;
+import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
+import org.apache.flink.util.Collector;
 
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.time.Duration;
 
 /**
@@ -59,7 +62,7 @@ public class PaymentWideApp {
 
         //TODO 4.设置Watermark以及事件时间字段
         //4.1 支付流的Watermark
-        paymentInfoDS.assignTimestampsAndWatermarks(WatermarkStrategy.<PaymentInfo>forBoundedOutOfOrderness(Duration.ofSeconds(3))
+        SingleOutputStreamOperator<PaymentInfo> paymentWithWM = paymentInfoDS.assignTimestampsAndWatermarks(WatermarkStrategy.<PaymentInfo>forBoundedOutOfOrderness(Duration.ofSeconds(3))
                 .withTimestampAssigner(new SerializableTimestampAssigner<PaymentInfo>() {
                     @Override
                     public long extractTimestamp(PaymentInfo element, long recordTimestamp) {
@@ -69,7 +72,32 @@ public class PaymentWideApp {
                 }));
 
         //4.2 订单流的Watermark
+        SingleOutputStreamOperator<OrderWide> orderWideWithWM = orderWideDS.assignTimestampsAndWatermarks(WatermarkStrategy.<OrderWide>forBoundedOutOfOrderness(Duration.ofSeconds(3))
+                .withTimestampAssigner(new SerializableTimestampAssigner<OrderWide>() {
+                    @Override
+                    public long extractTimestamp(OrderWide orderWide, long recordTimestamp) {
+                        return DateTimeUtil.toTimeStamp(orderWide.getCreate_time());
+                    }
+                })
+        );
 
+        //TODO 5.对数据进行分组
+        //5.1 支付流数据分组
+        KeyedStream<PaymentInfo, Long> paymentInfoKeyedDS = paymentWithWM.keyBy(PaymentInfo::getOrder_id);
+        //5.2 订单宽表流数据分组
+        KeyedStream<OrderWide, Long> orderWideKeyedDS = orderWideWithWM.keyBy(OrderWide::getOrder_id);
+
+        //TODO 6.使用IntervalJoin关联两条流
+        SingleOutputStreamOperator<PaymentWide> paymentWideDS = paymentInfoKeyedDS.intervalJoin(orderWideKeyedDS).between(Time.seconds(-1800), Time.seconds(0))
+                .process(new ProcessJoinFunction<PaymentInfo, OrderWide, PaymentWide>() {
+                    @Override
+                    public void processElement(PaymentInfo paymentInfo, OrderWide orderWide, ProcessJoinFunction<PaymentInfo, OrderWide, PaymentWide>.Context ctx, Collector<PaymentWide> out) {
+                        out.collect(new PaymentWide(paymentInfo, orderWide));
+                    }
+                });
+
+        //TODO 7.将数据写入kafka的DWM层
+        paymentWideDS.map(JSON::toJSONString).addSink(MyKafkaUtil.getKafkaSink(paymentWideSinkTopic));
 
         env.execute();
     }
