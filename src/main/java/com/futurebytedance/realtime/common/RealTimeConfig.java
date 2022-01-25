@@ -16,4 +16,9 @@ public class RealTimeConfig {
      * Phoenix连接的服务器地址
      */
     public static final String PHOENIX_SERVER = "jdbc:phoenix:hadoop202,hadoop203,hadoop204:2181";
+
+    /**
+     * ClickHouse的URL链接地址
+     */
+    public static final String CLICKHOUSE_URL = "jdbc:clickhouse://hadoop01:8123/default";
 }
