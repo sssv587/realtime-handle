@@ -3,6 +3,7 @@ package com.futurebytedance.realtime.app.dws;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.futurebytedance.realtime.bean.VisitorStats;
+import com.futurebytedance.realtime.utils.ClickHouseUtil;
 import com.futurebytedance.realtime.utils.MyKafkaUtil;
 import org.apache.flink.api.common.eventtime.SerializableTimestampAssigner;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
@@ -247,7 +248,8 @@ public class VisitorStatsApp {
                 }
         );
 
-        reduceDS.print(">>>>>>");
+        //TODO 9.向CLickHouse中插入数据
+        reduceDS.addSink(ClickHouseUtil.getJdbcSink("SQL"));
 
         env.execute();
     }
