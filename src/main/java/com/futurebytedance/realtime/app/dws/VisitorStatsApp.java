@@ -249,7 +249,7 @@ public class VisitorStatsApp {
         );
 
         //TODO 9.向CLickHouse中插入数据
-        reduceDS.addSink(ClickHouseUtil.getJdbcSink("SQL"));
+        reduceDS.addSink(ClickHouseUtil.getJdbcSink("insert into visitors_stats values(?,?,?,?,?,?,?,?,?,?,?,?)"));
 
         env.execute();
     }
