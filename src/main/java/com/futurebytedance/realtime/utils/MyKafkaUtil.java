@@ -47,13 +47,12 @@ public class MyKafkaUtil {
 
     //拼接 Kafka 相关属性到 DDL
     public static String getKafkaDDL(String topic, String groupId) {
-        String ddl = "'connector' = 'kafka', " +
+        return "'connector' = 'kafka', " +
                 " 'topic' = '" + topic + "'," +
                 " 'properties.bootstrap.servers' = '" + KAFKA_SERVER + "', " +
                 " 'properties.group.id' = '" + groupId + "', " +
                 " 'format' = 'json', " +
                 " 'scan.startup.mode' = 'latest-offset' ";
-        return ddl;
     }
 
 }
