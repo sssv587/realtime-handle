@@ -8,6 +8,7 @@ import com.futurebytedance.realtime.bean.OrderWide;
 import com.futurebytedance.realtime.bean.PaymentWide;
 import com.futurebytedance.realtime.bean.ProductStats;
 import com.futurebytedance.realtime.common.MallConstant;
+import com.futurebytedance.realtime.utils.ClickHouseUtil;
 import com.futurebytedance.realtime.utils.DateTimeUtil;
 import com.futurebytedance.realtime.utils.MyKafkaUtil;
 import org.apache.flink.api.common.eventtime.SerializableTimestampAssigner;
@@ -15,6 +16,10 @@ import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.functions.ReduceFunction;
 import org.apache.flink.api.java.functions.KeySelector;
+import org.apache.flink.connector.jdbc.JdbcConnectionOptions;
+import org.apache.flink.connector.jdbc.JdbcExecutionOptions;
+import org.apache.flink.connector.jdbc.JdbcSink;
+import org.apache.flink.connector.jdbc.JdbcStatementBuilder;
 import org.apache.flink.streaming.api.datastream.*;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.ProcessFunction;
@@ -26,6 +31,8 @@ import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
 import org.apache.flink.util.Collector;
 
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.text.SimpleDateFormat;
 import java.util.Collections;
 import java.util.Date;
@@ -38,8 +45,8 @@ import java.util.concurrent.TimeUnit;
  * @date 2022/1/26 - 23:53
  * @Description 商品主题统计应用
  * 执行前需要启动的服务
- *  -zk,kafka,logger.sh(nginx + 日志处理服务),maxwell,hdfs,hbase,Redis,ClickHouse
- *  -BaseLogApp,BaseDBApp,OrderWideApp,PaymentWide,ProductStatsApp
+ * -zk,kafka,logger.sh(nginx + 日志处理服务),maxwell,hdfs,hbase,Redis,ClickHouse
+ * -BaseLogApp,BaseDBApp,OrderWideApp,PaymentWide,ProductStatsApp
  */
 public class ProductStatsApp {
     public static void main(String[] args) throws Exception {
@@ -389,6 +396,9 @@ public class ProductStatsApp {
                 60,
                 TimeUnit.SECONDS
         );
+
+        //TODO 10.将聚合后的流数据写到ClickHouse中
+        productStatsWithCategoryDS.addSink(ClickHouseUtil.<ProductStats>getJdbcSink("insert into product_stats values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"));
 
         env.execute();
     }
