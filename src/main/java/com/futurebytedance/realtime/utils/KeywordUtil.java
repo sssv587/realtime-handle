@@ -1,0 +1,43 @@
+package com.futurebytedance.realtime.utils;
+
+import org.wltea.analyzer.core.IKSegmenter;
+import org.wltea.analyzer.core.Lexeme;
+
+import java.io.IOException;
+import java.io.StringReader;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * @author yuhang.sun
+ * @version 1.0
+ * @date 2022/1/29 - 15:55
+ * @Description IK分词器分词工具类
+ */
+public class KeywordUtil {
+    //分词 将字符串进行分词，将分词后的结果放到一个集合中返回
+    public static List<String> analyze(String text) {
+        List<String> wordList = new ArrayList<>();
+        //将字符串转换为字符输入流
+        StringReader sr = new StringReader(text);
+        //创建分词类对象
+        IKSegmenter ikSegmenter = new IKSegmenter(sr, true);
+        //Lexeme 是分词后的一个单词对象
+        Lexeme lexeme;
+        //通过循环，获取分词后的数据
+        while (true) {
+            try {
+                //获取一个单词
+                if ((lexeme = ikSegmenter.next()) != null) {
+                    String word = lexeme.getLexemeText();
+                    wordList.add(word);
+                } else {
+                    break;
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        return wordList;
+    }
+}
