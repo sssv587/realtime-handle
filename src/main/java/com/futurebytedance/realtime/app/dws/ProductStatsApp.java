@@ -3,6 +3,7 @@ package com.futurebytedance.realtime.app.dws;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.serializer.SerializeConfig;
 import com.futurebytedance.realtime.app.func.DimAsyncFunction;
 import com.futurebytedance.realtime.bean.OrderWide;
 import com.futurebytedance.realtime.bean.PaymentWide;
@@ -399,6 +400,10 @@ public class ProductStatsApp {
 
         //TODO 10.将聚合后的流数据写到ClickHouse中
         productStatsWithCategoryDS.addSink(ClickHouseUtil.<ProductStats>getJdbcSink("insert into product_stats values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"));
+
+        //TODO 11.将统计的结果写回到kafka的dws层
+        productStatsWithCategoryDS.map(productStat -> JSON.toJSONString(productStat, new SerializeConfig(true))).
+                addSink(MyKafkaUtil.getKafkaSink("dws_product_stats"));
 
         env.execute();
     }
